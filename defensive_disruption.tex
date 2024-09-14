@@ -1,0 +1,1752 @@
+In~{[}~{]}:
+
+\begin{verbatim}
+# Importing pandas, a library providing data structures and data analysis tools
+import pandas as pd
+
+# Importing numpy, a library for the Python programming language, adding support for large, multi-dimensional arrays and matrices, along with a large collection of high-level mathematical functions to operate on these arrays.
+import numpy as np
+
+# Importing norm and gaussian_kde for statistical analysis and percentileofscore for calculating percentile scores
+from scipy.stats import norm, gaussian_kde, percentileofscore
+
+# Setting the maximum number of columns pandas will display
+pd.options.display.max_columns = None
+
+# Importing players and shotchartdetail from nba_api.stats.static and nba_api.stats.endpoints respectively. These are used to fetch player data and shot chart details from the NBA API
+from nba_api.stats.static import players
+from nba_api.stats.endpoints import shotchartdetail
+from nba_api.stats.endpoints import playercareerstats
+
+# Importing matplotlib.pyplot, a plotting library used for 2D graphics
+import matplotlib.pyplot as plt
+
+# Importing seaborn, a Python data visualization library based on matplotlib
+import seaborn as sns
+
+# Importing various modules from matplotlib to create and customize the shot chart
+from matplotlib import cm
+from matplotlib.patches import Circle, Rectangle, Arc, ConnectionPatch
+from matplotlib.patches import Polygon
+from matplotlib.collections import PatchCollection
+from matplotlib.colors import LinearSegmentedColormap, ListedColormap, BoundaryNorm
+from matplotlib.path import Path
+from matplotlib.patches import PathPatch
+import matplotlib.patches as mpatches
+
+# Setting the style of seaborn to 'white'
+sns.set_style('white')
+
+# Setting the default color palette of seaborn
+sns.set_color_codes()
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Importing necessary libraries and modules
+from nba_api.stats.static import teams
+from nba_api.stats.endpoints import leaguegamefinder
+import pandas as pd
+from functools import wraps
+import time
+
+# Defining a decorator function to retry a function call in case of a specified exception
+def retry(ExceptionToCheck, tries=4, delay=3, backoff=2, logger=None):
+    def deco_retry(f):
+        @wraps(f)
+        def f_retry(*args, **kwargs):
+            mtries, mdelay = tries, delay
+            while mtries > 1:
+                try:
+                    return f(*args, **kwargs)  # Try to execute the function
+                except ExceptionToCheck as e:  # If exception occurs, print a message and wait for some time before retrying
+                    msg = f"{str(e)}, Retrying in {mdelay} seconds..."
+                    if logger:
+                        logger.warning(msg)
+                    else:
+                        print(msg)
+                    time.sleep(mdelay)
+                    mtries -= 1
+                    mdelay *= backoff
+            return f(*args, **kwargs)  # Final attempt to execute the function
+        return f_retry
+    return deco_retry
+
+# Creating a retry decorator for API calls
+retry_api_call = retry(Exception)
+
+# Fetching a list of all NBA teams
+nba_teams = teams.get_teams()
+
+# Initializing a list to store games data for all teams
+all_teams_games = []
+
+# Looping over each team
+for team in nba_teams:
+    team_id = team['id']
+    team_abbreviation = team['abbreviation']
+
+    team_games = []
+
+    # Specifying the season for which to fetch data
+    season_id = '2023-24'
+
+    # Defining a function to fetch games for a team for a specific season, and decorating it with the retry decorator
+    @retry_api_call
+    def fetch_team_games(team_id, season_id):
+        gamefinder = leaguegamefinder.LeagueGameFinder(team_id_nullable=team_id, season_nullable=season_id)
+        games = gamefinder.get_data_frames()[0]
+        return games
+
+    # Trying to fetch games for the current team
+    try:
+        games = fetch_team_games(team_id, season_id)
+        team_games.append(games)
+    except Exception as e:  # If an exception occurs, print a message and skip to the next team
+        print(f"Failed to fetch games for team {team_abbreviation}: {e}")
+        continue
+
+    # Concatenating all the dataframes for the current team into a single dataframe
+    team_games_df = pd.concat(team_games, ignore_index=True)
+    
+    # Adding a column for team abbreviation
+    team_games_df['TEAM_ABBREVIATION'] = team_abbreviation
+    
+    # Appending the games for the current team to the list of all teams' games
+    all_teams_games.append(team_games_df)
+
+# Concatenating all the dataframes for all teams into a single dataframe
+all_teams_games_df = pd.concat(all_teams_games, ignore_index=True)
+
+# Displaying the first few rows of the final dataframe
+all_teams_games_df.head()
+\end{verbatim}
+
+Out{[}~{]}:
+
+\begin{longtable}[]{@{}lllllllllllllllllllllllllllll@{}}
+\toprule
+& SEASON\_ID & TEAM\_ID & TEAM\_ABBREVIATION & TEAM\_NAME & GAME\_ID &
+GAME\_DATE & MATCHUP & WL & MIN & PTS & FGM & FGA & FG\_PCT & FG3M &
+FG3A & FG3\_PCT & FTM & FTA & FT\_PCT & OREB & DREB & REB & AST & STL &
+BLK & TOV & PF & PLUS\_MINUS \\
+\midrule
+\endhead
+0 & 52023 & 1610612737 & ATL & Atlanta Hawks & 0052300111 & 2024-04-17 &
+ATL @ CHI & L & 241 & 116 & 41 & 91 & 0.451 & 11 & 37 & 0.297 & 23 & 28
+& 0.821 & 8 & 26 & 34 & 30 & 4 & 2 & 9 & 16 & -15.0 \\
+1 & 22023 & 1610612737 & ATL & Atlanta Hawks & 0022301188 & 2024-04-14 &
+ATL @ IND & L & 241 & 115 & 39 & 89 & 0.438 & 12 & 36 & 0.333 & 25 & 27
+& 0.926 & 9 & 23 & 32 & 25 & 6 & 5 & 15 & 12 & -42.0 \\
+2 & 22023 & 1610612737 & ATL & Atlanta Hawks & 0022301178 & 2024-04-12 &
+ATL @ MIN & L & 240 & 106 & 40 & 90 & 0.444 & 9 & 30 & 0.300 & 17 & 25 &
+0.680 & 9 & 31 & 40 & 23 & 4 & 1 & 14 & 25 & -3.0 \\
+3 & 22023 & 1610612737 & ATL & Atlanta Hawks & 0022301159 & 2024-04-10 &
+ATL vs. CHA & L & 240 & 114 & 43 & 82 & 0.524 & 18 & 40 & 0.450 & 10 &
+16 & 0.625 & 7 & 31 & 38 & 35 & 7 & 2 & 16 & 20 & -1.0 \\
+4 & 22023 & 1610612737 & ATL & Atlanta Hawks & 0022301147 & 2024-04-09 &
+ATL vs. MIA & L & 292 & 111 & 45 & 113 & 0.398 & 10 & 46 & 0.217 & 11 &
+14 & 0.786 & 17 & 42 & 59 & 28 & 13 & 2 & 15 & 23 & -6.0 \\
+\bottomrule
+\end{longtable}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Define a function to get shot chart details for a specific player and season
+def get_player_shotchartdetail(player_name, season_id):
+    # Get a list of all NBA players
+    nba_players = players.get_players()
+    # Find the player in the list whose full name matches the input player_name
+    player_dict = [player for player in nba_players if player['full_name'] == player_name][0]
+    
+    # Get the career stats for the player using their ID
+    career = playercareerstats.PlayerCareerStats(player_id=player_dict['id'])
+    # Convert the career stats to a DataFrame
+    career_df = career.get_data_frames()[0]
+    
+    # Get the team ID for the player for the input season
+    team_id = career_df[career_df['SEASON_ID'] == season_id]['TEAM_ID']
+    
+    # Get the shot chart details for the player for the input season
+    shotchartlist = shotchartdetail.ShotChartDetail(team_id=int(team_id), 
+                                                   player_id=int(player_dict['id']), 
+                                                   season_type_all_star='Regular Season', 
+                                                   season_nullable=season_id,
+                                                   context_measure_simple="FGA").get_data_frames()
+    
+    # Return the shot chart details as two separate DataFrames
+    return shotchartlist[0], shotchartlist[1]
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Call the function 'get_player_shotchartdetail' with 'Bradley Beal' and '2023-24' as arguments.
+# This function fetches the shot chart details for Bradley Beal for the 2023-24 season.
+# The function returns two dataframes: 
+# 'player_shotchart_df' contains the shot chart details for Bradley Beal,
+# 'league_avg' contains the league average shot chart details for the 2023-24 season.
+player_shotchart_df, league_avg = get_player_shotchartdetail('Bradley Beal', '2023-24')
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Prints the first few rows of the player_shotchart_df dataframe
+player_shotchart_df
+\end{verbatim}
+
+Out{[}~{]}:
+
+\begin{longtable}[]{@{}lllllllllllllllllllllllll@{}}
+\toprule
+& GRID\_TYPE & GAME\_ID & GAME\_EVENT\_ID & PLAYER\_ID & PLAYER\_NAME &
+TEAM\_ID & TEAM\_NAME & PERIOD & MINUTES\_REMAINING & SECONDS\_REMAINING
+& EVENT\_TYPE & ACTION\_TYPE & SHOT\_TYPE & SHOT\_ZONE\_BASIC &
+SHOT\_ZONE\_AREA & SHOT\_ZONE\_RANGE & SHOT\_DISTANCE & LOC\_X & LOC\_Y
+& SHOT\_ATTEMPTED\_FLAG & SHOT\_MADE\_FLAG & GAME\_DATE & HTM & VTM \\
+\midrule
+\endhead
+0 & Shot Chart Detail & 0022300015 & 12 & 203078 & Bradley Beal &
+1610612756 & Phoenix Suns & 1 & 10 & 57 & Missed Shot & Pullup Jump shot
+& 2PT Field Goal & Mid-Range & Left Side Center(LC) & 16-24 ft. & 18 &
+-80 & 165 & 1 & 0 & 20231110 & PHX & LAL \\
+1 & Shot Chart Detail & 0022300015 & 34 & 203078 & Bradley Beal &
+1610612756 & Phoenix Suns & 1 & 9 & 13 & Made Shot & Driving Dunk Shot &
+2PT Field Goal & Restricted Area & Center(C) & Less Than 8 ft. & 1 & -4
+& 13 & 1 & 1 & 20231110 & PHX & LAL \\
+2 & Shot Chart Detail & 0022300015 & 38 & 203078 & Bradley Beal &
+1610612756 & Phoenix Suns & 1 & 8 & 49 & Made Shot & Cutting Layup Shot
+& 2PT Field Goal & Restricted Area & Center(C) & Less Than 8 ft. & 3 &
+28 & 22 & 1 & 1 & 20231110 & PHX & LAL \\
+3 & Shot Chart Detail & 0022300015 & 41 & 203078 & Bradley Beal &
+1610612756 & Phoenix Suns & 1 & 8 & 19 & Made Shot & Jump Shot & 3PT
+Field Goal & Left Corner 3 & Left Side(L) & 24+ ft. & 24 & -240 & 10 & 1
+& 1 & 20231110 & PHX & LAL \\
+4 & Shot Chart Detail & 0022300015 & 51 & 203078 & Bradley Beal &
+1610612756 & Phoenix Suns & 1 & 6 & 58 & Made Shot & Driving Floating
+Bank Jump Shot & 2PT Field Goal & In The Paint (Non-RA) & Center(C) &
+Less Than 8 ft. & 5 & 0 & 58 & 1 & 1 & 20231110 & PHX & LAL \\
+... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... &
+... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... &
+... \\
+730 & Shot Chart Detail & 0022301194 & 504 & 203078 & Bradley Beal &
+1610612756 & Phoenix Suns & 4 & 11 & 46 & Made Shot & Driving Floating
+Jump Shot & 2PT Field Goal & In The Paint (Non-RA) & Center(C) & 8-16
+ft. & 9 & 9 & 94 & 1 & 1 & 20240414 & MIN & PHX \\
+731 & Shot Chart Detail & 0022301194 & 517 & 203078 & Bradley Beal &
+1610612756 & Phoenix Suns & 4 & 10 & 10 & Missed Shot & Pullup Jump shot
+& 2PT Field Goal & Mid-Range & Left Side(L) & 8-16 ft. & 12 & -125 & 3 &
+1 & 0 & 20240414 & MIN & PHX \\
+732 & Shot Chart Detail & 0022301194 & 537 & 203078 & Bradley Beal &
+1610612756 & Phoenix Suns & 4 & 8 & 14 & Made Shot & Jump Shot & 3PT
+Field Goal & Above the Break 3 & Left Side Center(LC) & 24+ ft. & 24 &
+-173 & 180 & 1 & 1 & 20240414 & MIN & PHX \\
+733 & Shot Chart Detail & 0022301194 & 557 & 203078 & Bradley Beal &
+1610612756 & Phoenix Suns & 4 & 6 & 58 & Made Shot & Jump Shot & 3PT
+Field Goal & Above the Break 3 & Left Side Center(LC) & 24+ ft. & 25 &
+-134 & 215 & 1 & 1 & 20240414 & MIN & PHX \\
+734 & Shot Chart Detail & 0022301194 & 578 & 203078 & Bradley Beal &
+1610612756 & Phoenix Suns & 4 & 4 & 57 & Made Shot & Driving Layup Shot
+& 2PT Field Goal & Restricted Area & Center(C) & Less Than 8 ft. & 3 &
+18 & 32 & 1 & 1 & 20240414 & MIN & PHX \\
+\bottomrule
+\end{longtable}
+
+735 rows × 24 columns
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# This line of code checks if there are any null values in the 'LOC_X' column of the 'player_shotchart_df' DataFrame.
+# 'isnull()' returns a DataFrame where each cell is either True or False depending on whether that cell's value is null.
+# The first 'any()' reduces this DataFrame to a Series, where each element is True if any value in the corresponding column is True.
+# The second 'any()' further reduces this Series to a single boolean value, which is True if any value in the Series is True.
+# In other words, this line of code will return True if there are any null values in the 'LOC_X' column, and False otherwise.
+player_shotchart_df['LOC_X'].isnull().any().any()
+\end{verbatim}
+
+Out{[}~{]}:
+
+\begin{verbatim}
+False
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Prints the first few rows of the league_avg dataframe
+league_avg
+\end{verbatim}
+
+Out{[}~{]}:
+
+\begin{longtable}[]{@{}llllllll@{}}
+\toprule
+& GRID\_TYPE & SHOT\_ZONE\_BASIC & SHOT\_ZONE\_AREA & SHOT\_ZONE\_RANGE
+& FGA & FGM & FG\_PCT \\
+\midrule
+\endhead
+0 & League Averages & Above the Break 3 & Back Court(BC) & Back Court
+Shot & 32 & 3 & 0.094 \\
+1 & League Averages & Above the Break 3 & Center(C) & 24+ ft. & 15734 &
+5617 & 0.357 \\
+2 & League Averages & Above the Break 3 & Left Side Center(LC) & 24+ ft.
+& 24930 & 8949 & 0.359 \\
+3 & League Averages & Above the Break 3 & Right Side Center(RC) & 24+
+ft. & 23074 & 8370 & 0.363 \\
+4 & League Averages & Backcourt & Back Court(BC) & Back Court Shot & 433
+& 8 & 0.018 \\
+5 & League Averages & In The Paint (Non-RA) & Center(C) & 8-16 ft. &
+12413 & 5657 & 0.456 \\
+6 & League Averages & In The Paint (Non-RA) & Center(C) & Less Than 8
+ft. & 25865 & 11215 & 0.434 \\
+7 & League Averages & In The Paint (Non-RA) & Left Side(L) & 8-16 ft. &
+2262 & 1012 & 0.447 \\
+8 & League Averages & In The Paint (Non-RA) & Right Side(R) & 8-16 ft. &
+2549 & 1098 & 0.431 \\
+9 & League Averages & Left Corner 3 & Left Side(L) & 24+ ft. & 11523 &
+4448 & 0.386 \\
+10 & League Averages & Mid-Range & Center(C) & 16-24 ft. & 3435 & 1464 &
+0.426 \\
+11 & League Averages & Mid-Range & Center(C) & 8-16 ft. & 2036 & 946 &
+0.465 \\
+12 & League Averages & Mid-Range & Left Side Center(LC) & 16-24 ft. &
+3125 & 1261 & 0.404 \\
+13 & League Averages & Mid-Range & Left Side(L) & 16-24 ft. & 1284 & 527
+& 0.410 \\
+14 & League Averages & Mid-Range & Left Side(L) & 8-16 ft. & 4885 & 2035
+& 0.417 \\
+15 & League Averages & Mid-Range & Right Side Center(RC) & 16-24 ft. &
+3491 & 1365 & 0.391 \\
+16 & League Averages & Mid-Range & Right Side(R) & 16-24 ft. & 1228 &
+493 & 0.401 \\
+17 & League Averages & Mid-Range & Right Side(R) & 8-16 ft. & 5105 &
+2202 & 0.431 \\
+18 & League Averages & Restricted Area & Center(C) & Less Than 8 ft. &
+64669 & 42884 & 0.663 \\
+19 & League Averages & Right Corner 3 & Right Side(R) & 24+ ft. & 10628
+& 4185 & 0.394 \\
+\bottomrule
+\end{longtable}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+def draw_court(ax=None, color="blue", lw=1, shotzone=False, outer_lines=False):
+
+    if ax is None:
+        ax = plt.gca()
+
+    # Create the various parts of an NBA basketball court
+
+    # Create the basketball hoop
+    hoop = Circle((0, 0), radius=7.5, linewidth=lw, color=color, fill=False)
+
+    # Create backboard
+    backboard = Rectangle((-30, -12.5), 60, 0, linewidth=lw, color=color)
+
+    # The paint
+    # Create the outer box 0f the paint, width=16ft, height=19ft
+    outer_box = Rectangle((-80, -47.5), 160, 190, linewidth=lw, color=color,
+                          fill=False)
+    # Create the inner box of the paint, widt=12ft, height=19ft
+    inner_box = Rectangle((-60, -47.5), 120, 190, linewidth=lw, color=color,
+                          fill=False)
+
+    # Create free throw top arc
+    top_free_throw = Arc((0, 142.5), 120, 120, theta1=0, theta2=180,
+                         linewidth=lw, color=color, fill=False)
+    # Create free throw bottom arc
+    bottom_free_throw = Arc((0, 142.5), 120, 120, theta1=180, theta2=0,
+                            linewidth=lw, color=color, linestyle='dashed')
+    # Restricted Zone, it is an arc with 4ft radius from center of the hoop
+    restricted = Arc((0, 0), 80, 80, theta1=0, theta2=180, linewidth=lw,
+                     color=color)
+
+    # Three point line
+    # Create the right side 3pt lines, it's 14ft long before it arcs
+    corner_three_a = Rectangle((-220, -47.5), 0, 140, linewidth=lw,
+                               color=color)
+    # Create the right side 3pt lines, it's 14ft long before it arcs
+    corner_three_b = Rectangle((220, -47.5), 0, 140, linewidth=lw, color=color)
+    # 3pt arc - center of arc will be the hoop, arc is 23'9" away from hoop
+    three_arc = Arc((0, 0), 475, 475, theta1=22, theta2=158, linewidth=lw,
+                    color=color)
+
+    # Center Court
+    center_outer_arc = Arc((0, 422.5), 120, 120, theta1=180, theta2=0,
+                           linewidth=lw, color=color)
+    center_inner_arc = Arc((0, 422.5), 40, 40, theta1=180, theta2=0,
+                           linewidth=lw, color=color)
+    
+    # Draw shotzone Lines
+    # Based on Advanced Zone Mode
+    if (shotzone == True):
+        inner_circle = Circle((0, 0), radius=80, linewidth=lw, color='black', fill=False)
+        outer_circle = Circle((0, 0), radius=160, linewidth=lw, color='black', fill=False)
+        corner_three_a_x =  Rectangle((-250, 92.5), 30, 0, linewidth=lw, color=color)
+        corner_three_b_x = Rectangle((220, 92.5), 30, 0, linewidth=lw, color=color)
+        
+        # 60 degrees
+        inner_line_1 = Rectangle((40, 69.28), 80, 0, 60, linewidth=lw, color=color)
+        # 120 degrees
+        inner_line_2 = Rectangle((-40, 69.28), 80, 0, 120, linewidth=lw, color=color)
+        
+        # Assume x distance is also 40 for the endpoint
+        inner_line_3 = Rectangle((53.20, 150.89), 290, 0, 70.53, linewidth=lw, color=color)
+        inner_line_4 = Rectangle((-53.20, 150.89), 290, 0, 109.47, linewidth=lw, color=color)
+        
+        # Assume y distance is also 92.5 for the endpoint
+        inner_line_5 = Rectangle((130.54, 92.5), 80, 0, 35.32, linewidth=lw, color=color)
+        inner_line_6 = Rectangle((-130.54, 92.5), 80, 0, 144.68, linewidth=lw, color=color)
+        
+        
+        # List of the court elements to be plotted onto the axes
+        court_elements = [hoop, backboard, outer_box, inner_box, top_free_throw,
+                          bottom_free_throw, restricted, corner_three_a,
+                          corner_three_b, three_arc, center_outer_arc,
+                          center_inner_arc, inner_circle, outer_circle,
+                          corner_three_a_x, corner_three_b_x,
+                          inner_line_1, inner_line_2, inner_line_3, inner_line_4, inner_line_5, inner_line_6]
+    else:
+        # List of the court elements to be plotted onto the axes
+        court_elements = [hoop, backboard, outer_box, inner_box, top_free_throw,
+                          bottom_free_throw, restricted, corner_three_a,
+                          corner_three_b, three_arc, center_outer_arc,
+                          center_inner_arc]
+    
+    if outer_lines:
+        # Draw the half court line, baseline and side out bound lines
+        outer_lines = Rectangle((-250, -47.5), 500, 470, linewidth=lw,
+                                color=color, fill=False)
+        court_elements.append(outer_lines)
+
+    # Add the court elements onto the axes
+    for element in court_elements:
+        ax.add_patch(element)
+        
+
+    return ax
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Create a new figure and axes with a size of 12x12 inches
+fig, ax = plt.subplots(figsize=(12, 12))
+
+# Set the background color of the axes to black
+ax.set_facecolor('black')
+
+# Create a heatmap of the shot chart data using seaborn's kdeplot function
+# The x and y coordinates are the locations of the shots
+# The 'fill' parameter is set to True to fill in the areas of the heatmap
+# The 'cmap' parameter is set to 'inferno' to use the inferno color map
+# The 'ax' parameter is set to the previously created axes
+# The 'bw_adjust' parameter is set to 1 to adjust the bandwidth of the kernel density estimate
+sns.kdeplot(data=player_shotchart_df, x='LOC_X', y='LOC_Y', fill=True, cmap='inferno', ax=ax, bw_adjust=1)
+
+# Add scatter points for individual shots on top of the heatmap
+# The x and y coordinates are the locations of the shots
+# The color of the points is set to white
+# The size of the points is set to 2
+# The alpha of the points is set to 0.2 to make them semi-transparent
+ax.scatter(player_shotchart_df['LOC_X'], player_shotchart_df['LOC_Y'], color='white', s=2, alpha=0.2)
+
+# Draw the basketball court on the axes
+draw_court(ax)
+
+# Set the x and y limits of the plot to match the dimensions of the basketball court
+ax.set_xlim(-250, 250)
+ax.set_ylim(-47.5, 422.5)
+
+# Set the title of the plot to "Bradley Beal All Shots 23-24 Heat Map"
+ax.set_title("Bradley Beal All Shots 23-24 Heat Map", fontsize=18)
+
+# Display the plot
+plt.show()
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Create a new figure and axes with a size of 12x12 inches
+fig, ax = plt.subplots(figsize=(12, 12))
+
+# Set the background color of the axes to black
+ax.set_facecolor('black')
+
+# Create a new DataFrame that only contains the made shots
+# This is done by filtering the 'player_shotchart_df' DataFrame where the 'EVENT_TYPE' column is 'Made Shot'
+made_shots_df = player_shotchart_df[player_shotchart_df['EVENT_TYPE'] == 'Made Shot']
+
+# Create the heatmap for made shots using seaborn's kdeplot function
+# The x and y coordinates are the locations of the made shots
+# The 'fill' parameter is set to True to fill in the areas of the heatmap
+# The 'cmap' parameter is set to 'inferno' to use the inferno color map
+# The 'ax' parameter is set to the previously created axes
+# The 'bw_adjust' parameter is set to 1 to adjust the bandwidth of the kernel density estimate
+sns.kdeplot(data=made_shots_df, x='LOC_X', y='LOC_Y', fill=True, cmap='inferno', ax=ax, bw_adjust=1)
+
+# Add white scatter points for individual shots on top of the heatmap
+# The x and y coordinates are the locations of the shots
+# The color of the points is set to white
+# The size of the points is set to 2
+# The alpha of the points is set to 0.2 to make them semi-transparent
+ax.scatter(player_shotchart_df['LOC_X'], player_shotchart_df['LOC_Y'], color='white', s=2, alpha=0.2)
+
+# Draw the basketball court on the axes
+draw_court(ax)
+
+# Set the x and y limits of the plot to match the dimensions of the basketball court
+ax.set_xlim(-250, 250)
+ax.set_ylim(-47.5, 422.5)
+
+# Set the title of the plot to "Bradley Beal Made Shots 23-24 Heat Map"
+ax.set_title("Bradley Beal Made Shots 23-24 Heat Map", fontsize=18)
+
+# Display the plot
+plt.show()
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Create a new figure and axes with a size of 12x12 inches
+fig, ax = plt.subplots(figsize=(12, 12))
+
+# Set the background color of the axes to black
+ax.set_facecolor('black')
+
+# Create a new DataFrame that only contains the missed shots
+# This is done by filtering the 'player_shotchart_df' DataFrame where the 'EVENT_TYPE' column is 'Missed Shot'
+made_shots_df = player_shotchart_df[player_shotchart_df['EVENT_TYPE'] == 'Missed Shot']
+
+# Create the heatmap for missed shots using seaborn's kdeplot function
+# The x and y coordinates are the locations of the missed shots
+# The 'fill' parameter is set to True to fill in the areas of the heatmap
+# The 'cmap' parameter is set to 'inferno' to use the inferno color map
+# The 'ax' parameter is set to the previously created axes
+# The 'bw_adjust' parameter is set to 1 to adjust the bandwidth of the kernel density estimate
+sns.kdeplot(data=made_shots_df, x='LOC_X', y='LOC_Y', fill=True, cmap='inferno', ax=ax, bw_adjust=1)
+
+# Add white scatter points for individual shots on top of the heatmap
+# The x and y coordinates are the locations of the shots
+# The color of the points is set to white
+# The size of the points is set to 2
+# The alpha of the points is set to 0.2 to make them semi-transparent
+ax.scatter(player_shotchart_df['LOC_X'], player_shotchart_df['LOC_Y'], color='white', s=2, alpha=0.2)
+
+# Draw the basketball court on the axes
+draw_court(ax)
+
+# Set the x and y limits of the plot to match the dimensions of the basketball court
+ax.set_xlim(-250, 250)
+ax.set_ylim(-47.5, 422.5)
+
+# Set the title of the plot to "Bradley Beal Missed shots 23-24 Heat Map"
+ax.set_title("Bradley Beal Missed shots 23-24 Heat Map", fontsize=18)
+
+# Display the plot
+plt.show()
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Define a function to adjust the size of hexbins based on their count and color based on another value
+def sized_hexbin(ax, hc, hc2, cmap, norm):
+    # Get the center positions of the hexbins
+    offsets = hc.get_offsets()
+    # Get the original path (hexagon shape) of the hexbins
+    orgpath = hc.get_paths()[0]
+    # Get the vertices of the original path
+    verts = orgpath.vertices
+    # Get the count values of the hexbins
+    values1 = hc.get_array()
+    # Get the color values of the hexbins
+    values2 = hc2.get_array()
+    # Get the maximum count value
+    ma = values1.max()
+    # Initialize an empty list to store the new hexbin patches
+    patches = []
+
+    # Loop over each hexbin
+    for offset,val in zip(offsets,values1):
+        # Skip hexbins with a count of 0
+        if (int(val) == 0):
+            continue
+        # Create a list of non-zero count values
+        filtered_list = list(filter(lambda num: num != 0, values1))
+        # Adjust the size of the hexbin based on its count value
+        if (percentileofscore(filtered_list, val) < 33.33):
+            v1 = verts*0.3 + offset
+        elif (percentileofscore(filtered_list, val) > 69.99):
+            v1 = verts + offset
+        else:
+            v1 = verts*0.6 + offset
+        # Create a new path for the hexbin
+        path = Path(v1, orgpath.codes)
+        # Create a new patch for the hexbin
+        patch = PathPatch(path)
+        # Add the new patch to the list
+        patches.append(patch)
+
+    # Create a collection of patches with the specified colormap and normalization
+    pc = PatchCollection(patches, cmap=cmap, norm=norm)
+    # Set the color values of the patches
+    pc.set_array(values2)
+    # Add the patch collection to the axes
+    ax.add_collection(pc)
+    # Remove the original hexbins
+    hc.remove()
+    hc2.remove()
+
+# Define a function to create a hexbin map chart
+def hexmap_chart(data, league_avg, title="", color="b",
+               xlim=(-250, 250), ylim=(422.5, -47.5), line_color="white",
+               court_color="#1a477b", court_lw=2, outer_lines=False,
+               flip_court=False, gridsize=None, 
+               ax=None, despine=False, **kwargs):
+    
+    # Calculate the league average field goal percentage for each shot zone
+    LA = league_avg.loc[:,['SHOT_ZONE_AREA','SHOT_ZONE_RANGE', 'FGA', 'FGM']].groupby(['SHOT_ZONE_AREA', 'SHOT_ZONE_RANGE']).sum()
+    LA['FGP'] = 1.0*LA['FGM']/LA['FGA']
+    # Calculate the player's field goal percentage for each shot zone
+    player = data.groupby(['SHOT_ZONE_AREA','SHOT_ZONE_RANGE','SHOT_MADE_FLAG']).size().unstack(fill_value=0)
+    player['FGP'] = 1.0*player.loc[:,1]/player.sum(axis=1)
+    # Calculate the difference between the player's field goal percentage and the league average
+    player_vs_league = (player.loc[:,'FGP'] - LA.loc[:,'FGP'])*100  
+    # Merge the difference data with the original data
+    data = pd.merge(data, player_vs_league, on=['SHOT_ZONE_AREA', 'SHOT_ZONE_RANGE'], how='right')
+    
+    # Create a new axes if none is provided
+    if ax is None:
+        ax = plt.gca()
+        ax.set_facecolor(court_color)
+
+    # Set the limits of the axes
+    if not flip_court:
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+    else:
+        ax.set_xlim(xlim[::-1])
+        ax.set_ylim(ylim[::-1])
+
+    # Remove the axis labels
+    ax.tick_params(labelbottom="off", labelleft="off")
+    # Set the title of the plot
+    ax.set_title(title, fontsize=18)
+
+    # Get the x and y coordinates of the shots
+    x = data['LOC_X']
+    y = data['LOC_Y']
+        
+    # Define a diverging colormap
+    colors = ['#30011E', '#550068', '#BB3754', '#FA8E63', '#FED788', '#FCFFA4']
+    cmap = ListedColormap(colors)
+    # Define the boundaries for the colormap
+    boundaries = [-np.inf, -9, -3, 0, 3, 9, np.inf]
+    norm = BoundaryNorm(boundaries, cmap.N, clip=True)   
+    
+    # Create two hexbin plots, one for the count values and one for the color values
+    hexbin = ax.hexbin(x, y, gridsize=gridsize, cmap=cmap, norm=norm, extent=[-275, 275, -50, 425])
+    hexbin2 = ax.hexbin(x, y, C=data['FGP'], gridsize=gridsize, cmap=cmap, norm=norm, extent=[-275, 275, -50, 425])
+    # Adjust the size and color of the hexbins
+    sized_hexbin(ax, hexbin, hexbin2, cmap, norm)
+
+    # Create a legend for the colormap
+    labels = ["< 9% less", "9% to 3% less", "3% to 0% less", "3% to 0% more", "3% to 9% more", ">9% more"]
+    patches = [mpatches.Patch(color=c, label=l) for c, l in zip(colors, labels)]
+    ax.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc='upper left', title='FG% vs. League Average (%)', title_fontsize='large', fontsize='large')
+
+    # Draw the basketball court on the axes
+    draw_court(ax, color='black', lw=court_lw, outer_lines=outer_lines)
+
+    # Set the line width and color of the axes spines
+    for spine in ax.spines:
+        ax.spines[spine].set_lw(court_lw)
+        ax.spines[spine].set_color(line_color)
+
+    # Remove the axes spines if specified
+    if despine:
+        ax.spines["top"].set_visible(False)
+        ax.spines["bottom"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_visible(False)
+
+    # Return the axes
+    return ax
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Call the hexmap_chart function with the player's shot chart data, the league average data, a title, and a grid size
+# This will create a hexbin map chart that shows the difference between Bradley Beal's field goal percentage and the league average for each shot zone in the 2023-24 season
+hexmap_chart(player_shotchart_df, league_avg, title="Bradley Beal Hex Chart 2023-24", gridsize=30)
+
+# Display the plot
+plt.show()
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Filter the DataFrame 'all_teams_games_df' where the 'TEAM_ABBREVIATION' is 'PHX' (Phoenix Suns), and get the 'TEAM_ID'
+suns_team_id = all_teams_games_df[all_teams_games_df['TEAM_ABBREVIATION'] == 'PHX']['TEAM_ID']
+
+# Filter the DataFrame 'all_teams_games_df' where the 'TEAM_ABBREVIATION' is 'MIN' (Minnesota Timberwolves), and get the 'TEAM_ID'
+twolves_team_id = all_teams_games_df[all_teams_games_df['TEAM_ABBREVIATION'] == 'MIN']['TEAM_ID']
+
+# Filter the DataFrame 'player_shotchart_df' where the 'PLAYER_NAME' is 'Bradley Beal', and get the 'PLAYER_ID'
+bradley_beal_id = player_shotchart_df[player_shotchart_df['PLAYER_NAME'] == 'Bradley Beal']['PLAYER_ID'].values[0]
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Use the ShotChartDetail function from the shotchartdetail module to get shot chart data
+# The parameters specify that we want data for Bradley Beal (player_id=bradley_beal_id) playing for the Phoenix Suns (team_id=suns_team_id)
+# against the Minnesota Timberwolves (opponent_team_id=twolves_team_id) in the 2023-24 playoffs (season_nullable='2023-24', season_type_all_star='Playoffs')
+# The context_measure_simple parameter is set to "FGA" to get data for field goal attempts
+# The get_data_frames()[0] at the end gets the first DataFrame from the returned data
+brad_wolves_suns = shotchartdetail.ShotChartDetail(team_id=suns_team_id, player_id=bradley_beal_id,
+                                                         opponent_team_id=twolves_team_id,
+                                                         season_type_all_star='Playoffs',
+                                                         season_nullable='2023-24',
+                                                         context_measure_simple="FGA").get_data_frames()[0]
+
+# Call the hexmap_chart function with the shot chart data, the league average data, a title, and a grid size
+# This will create a hexbin map chart that shows the difference between Bradley Beal's field goal percentage and the league average for each shot zone in the 2023-24 playoffs against the Timberwolves
+hexmap_chart(brad_wolves_suns, league_avg, title="Bradley Beal Hex Chart against Timberwolves 2023-24 playoffs", gridsize=10)
+
+# Display the plot
+plt.show()
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Use the ShotChartDetail function from the shotchartdetail module to get shot chart data
+# The parameters specify that we want data for the Phoenix Suns (team_id=1610612756) against the Minnesota Timberwolves (opponent_team_id=1610612750) in the 2023-24 playoffs (season_nullable='2023-24', season_type_all_star='Playoffs')
+# The context_measure_simple parameter is set to "FGA" to get data for field goal attempts
+# The get_data_frames()[0] at the end gets the first DataFrame from the returned data
+wolves_suns = shotchartdetail.ShotChartDetail(team_id=1610612756, player_id=0,
+                                                         opponent_team_id=1610612750,
+                                                         season_type_all_star='Playoffs',
+                                                         season_nullable='2023-24',
+                                                         context_measure_simple="FGA").get_data_frames()[0]
+
+# Call the hexmap_chart function with the shot chart data, the league average data, a title, and a grid size
+# This will create a hexbin map chart that shows the difference between the Suns' field goal percentage and the league average for each shot zone in the 2023-24 playoffs against the Timberwolves
+hexmap_chart(wolves_suns, league_avg, title="Suns Hex Chart against Timberwolves 2023-24 playoffs", gridsize=15)
+
+# Display the plot
+plt.show()
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Define a function to get game information by matchup
+def get_game_info_by_matchup(matchup_value, games_df):
+    # Filter the games DataFrame based on the provided matchup value
+    filtered_df = games_df[games_df['MATCHUP'] == matchup_value]
+
+    # Extract the GAME_ID and GAME_DATE columns from the filtered DataFrame
+    game_info_df = filtered_df[['GAME_ID', 'GAME_DATE']]
+
+    # Return the DataFrame with game information
+    return game_info_df
+
+# Assuming all_teams_games_df contains the DataFrame with all NBA games data
+
+# Define the matchup value as "PHX @ MIN" (Phoenix Suns at Minnesota Timberwolves)
+matchup_value = "PHX @ MIN"
+
+# Call the get_game_info_by_matchup function with the matchup value and the games DataFrame
+# This will return a DataFrame with the game ID and date for all games where the Suns played at the Timberwolves
+game_info = get_game_info_by_matchup(matchup_value, all_teams_games_df)
+
+# Print the DataFrame with game information
+print(game_info)
+\end{verbatim}
+
+\begin{verbatim}
+         GAME_ID   GAME_DATE
+1766  0042300162  2024-04-23
+1767  0042300161  2024-04-20
+1768  0022301194  2024-04-14
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Import the HustleStatsBoxScore endpoint from the nba_api.stats.endpoints module
+from nba_api.stats.endpoints import hustlestatsboxscore
+
+# Define a function to fetch hustle data for a specific game
+def fetch_hustle_data(game_id):
+    try:
+        # Call the HustleStatsBoxScore endpoint with the game ID to get hustle data
+        # The get_data_frames() method returns the data as a list of DataFrames
+        hustle_data = hustlestatsboxscore.HustleStatsBoxScore(game_id=game_id).get_data_frames()
+        # Return the hustle data
+        return hustle_data
+    except Exception as e:
+        # If an error occurs, print an error message and return None
+        print(f"Failed to fetch boxscore data for game {game_id}: {e}")
+        return None
+
+# Define the game ID for the game between the Suns and the Timberwolves Game 1 in the playoffs
+game_id = '0042300161'
+
+# Call the fetch_hustle_data function with the game ID to get the hustle data
+hustle_df = fetch_hustle_data(game_id)
+
+# If the hustle data was successfully fetched
+if hustle_df is not None:
+    # Print a success message
+    print("Boxscore data successfully fetched:")
+    # Loop through each DataFrame in the hustle data
+    for df_index, df in enumerate(hustle_df):
+        # Print the index and the DataFrame
+        print(f"DataFrame {df_index + 1}:")
+        print(df)
+        # Convert the DataFrame to a pandas DataFrame (if it's not already)
+        df = pd.DataFrame(df)
+        # Print the columns of the DataFrame
+        print("Columns:")
+        print(df.columns)
+# If the hustle data was not fetched due to an error
+else:
+    # Print an error message
+    print("Boxscore data was not fetched due to an error.")
+\end{verbatim}
+
+\begin{verbatim}
+Boxscore data successfully fetched:
+DataFrame 1:
+      GAME_ID  HUSTLE_STATUS
+0  0042300162              1
+Columns:
+Index(['GAME_ID', 'HUSTLE_STATUS'], dtype='object')
+DataFrame 2:
+       GAME_ID     TEAM_ID TEAM_ABBREVIATION  TEAM_CITY  PLAYER_ID  \
+0   0042300162  1610612756               PHX    Phoenix    1628960   
+1   0042300162  1610612756               PHX    Phoenix     201142   
+2   0042300162  1610612756               PHX    Phoenix     203994   
+3   0042300162  1610612756               PHX    Phoenix     203078   
+4   0042300162  1610612756               PHX    Phoenix    1626164   
+5   0042300162  1610612756               PHX    Phoenix    1626220   
+6   0042300162  1610612756               PHX    Phoenix     201569   
+7   0042300162  1610612756               PHX    Phoenix    1629234   
+8   0042300162  1610612756               PHX    Phoenix    1631223   
+9   0042300162  1610612756               PHX    Phoenix    1629006   
+10  0042300162  1610612756               PHX    Phoenix    1629626   
+11  0042300162  1610612756               PHX    Phoenix    1629642   
+12  0042300162  1610612750               MIN  Minnesota    1630183   
+13  0042300162  1610612750               MIN  Minnesota    1626157   
+14  0042300162  1610612750               MIN  Minnesota     203497   
+15  0042300162  1610612750               MIN  Minnesota    1630162   
+16  0042300162  1610612750               MIN  Minnesota     201144   
+17  0042300162  1610612750               MIN  Minnesota    1629675   
+18  0042300162  1610612750               MIN  Minnesota    1629638   
+19  0042300162  1610612750               MIN  Minnesota    1628420   
+20  0042300162  1610612750               MIN  Minnesota    1629162   
+21  0042300162  1610612750               MIN  Minnesota    1631111   
+22  0042300162  1610612750               MIN  Minnesota     203933   
+23  0042300162  1610612750               MIN  Minnesota    1630568   
+
+                 PLAYER_NAME START_POSITION COMMENT MINUTES  PTS  \
+0              Grayson Allen              F           17:27    3   
+1               Kevin Durant              F           41:06   18   
+2               Jusuf Nurkic              C           31:00   10   
+3               Bradley Beal              G           42:16   14   
+4               Devin Booker              G           41:36   20   
+5              Royce O'Neale                          17:27    0   
+6                Eric Gordon                          23:00   15   
+7               Drew Eubanks                          17:00    8   
+8                David Roddy                           2:17    0   
+9                Josh Okogie                           2:17    0   
+10                   Bol Bol                           2:17    0   
+11             Nassir Little                           2:17    5   
+12           Jaden McDaniels              F           41:22   25   
+13        Karl-Anthony Towns              F           23:31   12   
+14               Rudy Gobert              C           39:15   18   
+15           Anthony Edwards              G           37:53   15   
+16               Mike Conley              G           31:35   18   
+17                  Naz Reid                          16:46    5   
+18  Nickeil Alexander-Walker                          30:57   10   
+19              Monte Morris                          10:37    2   
+20         Jordan McLaughlin                           2:01    0   
+21         Wendell Moore Jr.                           2:01    0   
+22               T.J. Warren                           2:01    0   
+23                Luka Garza                           2:01    0   
+
+    CONTESTED_SHOTS  CONTESTED_SHOTS_2PT  CONTESTED_SHOTS_3PT  DEFLECTIONS  \
+0                 2                    0                    2            1   
+1                 7                    6                    1            1   
+2                10                    7                    3            1   
+3                 2                    0                    2            4   
+4                 3                    1                    2            5   
+5                 1                    1                    0            1   
+6                 2                    1                    1            2   
+7                 1                    1                    0            1   
+8                 0                    0                    0            0   
+9                 0                    0                    0            0   
+10                0                    0                    0            0   
+11                0                    0                    0            0   
+12                5                    5                    0            1   
+13                6                    4                    2            0   
+14               11                    9                    2            3   
+15                3                    2                    1            4   
+16                4                    2                    2            1   
+17                2                    2                    0            3   
+18                3                    1                    2            7   
+19                5                    3                    2            0   
+20                2                    1                    1            1   
+21                0                    0                    0            0   
+22                0                    0                    0            0   
+23                0                    0                    0            0   
+
+    CHARGES_DRAWN  SCREEN_ASSISTS  SCREEN_AST_PTS  OFF_LOOSE_BALLS_RECOVERED  \
+0               0               1               3                          0   
+1               0               1               2                          0   
+2               0               5              11                          0   
+3               0               0               0                          0   
+4               0               2               4                          1   
+5               0               1               3                          0   
+6               0               0               0                          0   
+7               0               4               9                          0   
+8               0               0               0                          0   
+9               0               0               0                          0   
+10              0               0               0                          0   
+11              0               0               0                          0   
+12              0               0               0                          1   
+13              0               1               2                          0   
+14              0               8              19                          0   
+15              0               0               0                          1   
+16              0               0               0                          1   
+17              0               0               0                          0   
+18              0               0               0                          0   
+19              0               0               0                          0   
+20              0               0               0                          0   
+21              0               0               0                          0   
+22              0               0               0                          0   
+23              0               0               0                          0   
+
+    DEF_LOOSE_BALLS_RECOVERED  LOOSE_BALLS_RECOVERED  OFF_BOXOUTS  \
+0                           1                      1            1   
+1                           1                      1            0   
+2                           0                      0            1   
+3                           0                      0            0   
+4                           1                      2            0   
+5                           0                      0            0   
+6                           0                      0            0   
+7                           1                      1            0   
+8                           0                      0            0   
+9                           0                      0            0   
+10                          0                      0            0   
+11                          0                      0            0   
+12                          0                      1            0   
+13                          0                      0            0   
+14                          1                      1            0   
+15                          0                      1            0   
+16                          2                      3            0   
+17                          0                      0            0   
+18                          1                      1            0   
+19                          0                      0            0   
+20                          0                      0            0   
+21                          0                      0            0   
+22                          0                      0            0   
+23                          0                      0            0   
+
+    DEF_BOXOUTS  BOX_OUT_PLAYER_TEAM_REBS  BOX_OUT_PLAYER_REBS  BOX_OUTS  
+0             0                         1                    1         1  
+1             1                         1                    1         1  
+2             3                         4                    2         4  
+3             1                         1                    1         1  
+4             0                         0                    0         0  
+5             1                         1                    1         1  
+6             0                         0                    0         0  
+7             2                         1                    1         2  
+8             0                         0                    0         0  
+9             0                         0                    0         0  
+10            0                         0                    0         0  
+11            0                         0                    0         0  
+12            0                         0                    0         0  
+13            1                         1                    1         1  
+14            3                         3                    2         3  
+15            1                         1                    0         1  
+16            1                         1                    0         1  
+17            1                         1                    0         1  
+18            0                         0                    0         0  
+19            0                         0                    0         0  
+20            0                         0                    0         0  
+21            0                         0                    0         0  
+22            0                         0                    0         0  
+23            0                         0                    0         0  
+Columns:
+Index(['GAME_ID', 'TEAM_ID', 'TEAM_ABBREVIATION', 'TEAM_CITY', 'PLAYER_ID',
+       'PLAYER_NAME', 'START_POSITION', 'COMMENT', 'MINUTES', 'PTS',
+       'CONTESTED_SHOTS', 'CONTESTED_SHOTS_2PT', 'CONTESTED_SHOTS_3PT',
+       'DEFLECTIONS', 'CHARGES_DRAWN', 'SCREEN_ASSISTS', 'SCREEN_AST_PTS',
+       'OFF_LOOSE_BALLS_RECOVERED', 'DEF_LOOSE_BALLS_RECOVERED',
+       'LOOSE_BALLS_RECOVERED', 'OFF_BOXOUTS', 'DEF_BOXOUTS',
+       'BOX_OUT_PLAYER_TEAM_REBS', 'BOX_OUT_PLAYER_REBS', 'BOX_OUTS'],
+      dtype='object')
+DataFrame 3:
+      GAME_ID     TEAM_ID     TEAM_NAME TEAM_ABBREVIATION  TEAM_CITY  \
+0  0042300162  1610612756          Suns               PHX    Phoenix   
+1  0042300162  1610612750  Timberwolves               MIN  Minnesota   
+
+         MINUTES  PTS  CONTESTED_SHOTS  CONTESTED_SHOTS_2PT  \
+0  240.000000:00   93               28                   17   
+1  240.000000:00  105               41                   29   
+
+   CONTESTED_SHOTS_3PT  DEFLECTIONS  CHARGES_DRAWN  SCREEN_ASSISTS  \
+0                   11           16              0              14   
+1                   12           20              0               9   
+
+   SCREEN_AST_PTS  OFF_LOOSE_BALLS_RECOVERED  DEF_LOOSE_BALLS_RECOVERED  \
+0              32                          1                          4   
+1              21                          3                          4   
+
+   LOOSE_BALLS_RECOVERED  OFF_BOXOUTS  DEF_BOXOUTS  BOX_OUT_PLAYER_TEAM_REBS  \
+0                      5            2            8                         9   
+1                      7            0            7                         7   
+
+   BOX_OUT_PLAYER_REBS  BOX_OUTS  
+0                    7        10  
+1                    3         7  
+Columns:
+Index(['GAME_ID', 'TEAM_ID', 'TEAM_NAME', 'TEAM_ABBREVIATION', 'TEAM_CITY',
+       'MINUTES', 'PTS', 'CONTESTED_SHOTS', 'CONTESTED_SHOTS_2PT',
+       'CONTESTED_SHOTS_3PT', 'DEFLECTIONS', 'CHARGES_DRAWN', 'SCREEN_ASSISTS',
+       'SCREEN_AST_PTS', 'OFF_LOOSE_BALLS_RECOVERED',
+       'DEF_LOOSE_BALLS_RECOVERED', 'LOOSE_BALLS_RECOVERED', 'OFF_BOXOUTS',
+       'DEF_BOXOUTS', 'BOX_OUT_PLAYER_TEAM_REBS', 'BOX_OUT_PLAYER_REBS',
+       'BOX_OUTS'],
+      dtype='object')
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# This DataFrame contains team-level hustle stats
+team_hustle = hustle_df[2]
+
+# Display the DataFrame
+team_hustle
+\end{verbatim}
+
+Out{[}~{]}:
+
+\begin{longtable}[]{@{}lllllllllllllllllllllll@{}}
+\toprule
+& GAME\_ID & TEAM\_ID & TEAM\_NAME & TEAM\_ABBREVIATION & TEAM\_CITY &
+MINUTES & PTS & CONTESTED\_SHOTS & CONTESTED\_SHOTS\_2PT &
+CONTESTED\_SHOTS\_3PT & DEFLECTIONS & CHARGES\_DRAWN & SCREEN\_ASSISTS &
+SCREEN\_AST\_PTS & OFF\_LOOSE\_BALLS\_RECOVERED &
+DEF\_LOOSE\_BALLS\_RECOVERED & LOOSE\_BALLS\_RECOVERED & OFF\_BOXOUTS &
+DEF\_BOXOUTS & BOX\_OUT\_PLAYER\_TEAM\_REBS & BOX\_OUT\_PLAYER\_REBS &
+BOX\_OUTS \\
+\midrule
+\endhead
+0 & 0042300162 & 1610612756 & Suns & PHX & Phoenix & 240.000000:00 & 93
+& 28 & 17 & 11 & 16 & 0 & 14 & 32 & 1 & 4 & 5 & 2 & 8 & 9 & 7 & 10 \\
+1 & 0042300162 & 1610612750 & Timberwolves & MIN & Minnesota &
+240.000000:00 & 105 & 41 & 29 & 12 & 20 & 0 & 9 & 21 & 3 & 4 & 7 & 0 & 7
+& 7 & 3 & 7 \\
+\bottomrule
+\end{longtable}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+import matplotlib.pyplot as plt
+
+# Define a function to get team data by team name from the hustle data
+def get_team_data_by_name(team_name, hustle_df):
+    # Extract data for the specified team name from hustle_df
+    team_data = hustle_df[2]
+    team_data = team_data[team_data['TEAM_NAME'] == team_name]
+    return team_data
+
+# Define a function to compare impact metrics between two teams
+def compare_impact_metrics(team1_data, team2_data, team1_name, team2_name):
+    # Define impact metrics to compare
+    metrics = ['PTS', 'CONTESTED_SHOTS', 'DEFLECTIONS', 'CHARGES_DRAWN', 
+               'SCREEN_ASSISTS', 'OFF_LOOSE_BALLS_RECOVERED', 'DEF_LOOSE_BALLS_RECOVERED',
+               'LOOSE_BALLS_RECOVERED', 'OFF_BOXOUTS', 'DEF_BOXOUTS']
+
+    # Extract values for team 1 and team 2
+    team1_metrics = team1_data[metrics].iloc[0].values
+    team2_metrics = team2_data[metrics].iloc[0].values
+
+    # Create bar plot
+    fig, ax = plt.subplots(figsize=(12, 8))
+    index = range(len(metrics))
+    bar_width = 0.35
+
+    # Create bars for team 1 and team 2
+    team1_bars = ax.bar(index, team1_metrics, bar_width, label=team1_name, color='b')
+    team2_bars = ax.bar([i + bar_width for i in index], team2_metrics, bar_width, label=team2_name, color='r')
+
+    # Add labels and title
+    ax.set_xlabel('Metrics')
+    ax.set_ylabel('Values')
+    ax.set_title('Comparison of Hustle Metrics between ' + team1_name + ' and ' + team2_name + ' game 1 23/24 playoffs')
+    ax.set_xticks([i + bar_width / 2 for i in index])
+    ax.set_xticklabels(metrics, rotation=45, ha='right')
+    ax.legend()
+
+    # Add grid
+    ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+
+    # Add annotations to bars
+    for i in index:
+        ax.annotate(f'{team1_metrics[i]}', xy=(i, team1_metrics[i]), xytext=(0, 3),
+                    textcoords="offset points", ha='center', va='bottom', color='black')
+        ax.annotate(f'{team2_metrics[i]}', xy=(i + bar_width, team2_metrics[i]), xytext=(0, 3),
+                    textcoords="offset points", ha='center', va='bottom', color='black')
+
+    # Adjust layout and display the plot
+    plt.tight_layout()
+    plt.show()
+
+# Assuming hustle_df contains the box-score data for both teams
+# Get data for the Timberwolves and the Suns
+team1_data = get_team_data_by_name('Timberwolves', hustle_df)
+team2_data = get_team_data_by_name('Suns', hustle_df)
+
+# Define team names
+team1_name = 'Timberwolves'
+team2_name = 'Suns'
+
+# Compare impact metrics between the Timberwolves and the Suns
+compare_impact_metrics(team1_data, team2_data, team1_name, team2_name)
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+from nba_api.stats.static import teams
+from nba_api.stats.endpoints import leaguegamefinder, hustlestatsboxscore
+import pandas as pd
+from functools import wraps
+import time
+
+def retry(ExceptionToCheck, tries=4, delay=3, backoff=2, logger=None):
+    def deco_retry(f):
+        @wraps(f)
+        def f_retry(*args, **kwargs):
+            mtries, mdelay = tries, delay
+            while mtries > 1:
+                try:
+                    return f(*args, **kwargs)
+                except ExceptionToCheck as e:
+                    msg = f"{str(e)}, Retrying in {mdelay} seconds..."
+                    if logger:
+                        logger.warning(msg)
+                    else:
+                        print(msg)
+                    time.sleep(mdelay)
+                    mtries -= 1
+                    mdelay *= backoff
+            return f(*args, **kwargs)
+        return f_retry
+    return deco_retry
+
+# Retry decorator for API calls
+retry_api_call = retry(Exception)
+
+nba_teams = teams.get_teams()
+
+total_teams = len(nba_teams)
+progress_step = 100 / total_teams
+
+# Only get data for the 2023-2024 season
+season_id = "2023-24"
+all_teams_hustle_data = []
+
+for idx, team in enumerate(nba_teams):
+    team_id = team['id']
+    team_abbreviation = team['abbreviation']
+
+    team_hustle_data = []
+
+    @retry_api_call
+    def fetch_team_games(team_id, season_id):
+        gamefinder = leaguegamefinder.LeagueGameFinder(team_id_nullable=team_id, season_nullable=season_id)
+        games = gamefinder.get_data_frames()[0]
+        return games
+
+    try:
+        games = fetch_team_games(team_id, season_id)
+    except Exception as e:
+        print(f"Failed to fetch games for team {team_abbreviation}: {e}")
+        continue
+
+    for game_id in games['GAME_ID']:
+        try:
+            hustle_data = hustlestatsboxscore.HustleStatsBoxScore(game_id=game_id).get_data_frames()
+            if hustle_data:
+                team_hustle_data.extend(hustle_data)
+        except Exception as e:
+            print(f"Failed to fetch hustle data for game {game_id}: {e}")
+
+    if team_hustle_data:
+        team_hustle_df = pd.concat(team_hustle_data, ignore_index=True)
+        team_hustle_df['TEAM_ABBREVIATION'] = team_abbreviation
+        all_teams_hustle_data.append(team_hustle_df)
+
+    # Print progress
+    progress = (idx + 1) * progress_step
+    print(f"Progress: {progress:.2f}%")
+
+# Store all the data in a single DataFrame
+all_teams_hustle_df = pd.concat(all_teams_hustle_data, ignore_index=True)
+\end{verbatim}
+
+\begin{verbatim}
+Progress: 3.33%
+Progress: 6.67%
+Progress: 10.00%
+Progress: 13.33%
+Progress: 16.67%
+Progress: 20.00%
+Progress: 23.33%
+Progress: 26.67%
+Progress: 30.00%
+Progress: 33.33%
+Progress: 36.67%
+Progress: 40.00%
+Progress: 43.33%
+Progress: 46.67%
+Progress: 50.00%
+Progress: 53.33%
+Progress: 56.67%
+Progress: 60.00%
+Progress: 63.33%
+Progress: 66.67%
+Progress: 70.00%
+Progress: 73.33%
+Progress: 76.67%
+Progress: 80.00%
+Progress: 83.33%
+Progress: 86.67%
+Progress: 90.00%
+Progress: 93.33%
+Failed to fetch hustle data for game 0022300502: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+Failed to fetch hustle data for game 0022300394: HTTPSConnectionPool(host='stats.nba.com', port=443): Read timed out. (read timeout=30)
+Failed to fetch hustle data for game 0022300374: HTTPSConnectionPool(host='stats.nba.com', port=443): Read timed out. (read timeout=30)
+Failed to fetch hustle data for game 0022300352: HTTPSConnectionPool(host='stats.nba.com', port=443): Read timed out. (read timeout=30)
+Failed to fetch hustle data for game 0022300334: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+Failed to fetch hustle data for game 0022300327: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+Failed to fetch hustle data for game 0022300310: HTTPSConnectionPool(host='stats.nba.com', port=443): Read timed out. (read timeout=30)
+Progress: 96.67%
+Progress: 100.00%
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Save the DataFrame 'all_teams_hustle_df' to a CSV file named 'all_teams_hustle_df.csv'. 
+# The 'index=False' argument means that the DataFrame's index will not be saved in the file.
+all_teams_hustle_df.to_csv('all_teams_hustle_df.csv', index=False)
+
+# Read the CSV file 'all_teams_hustle_df.csv' into a DataFrame named 'hustle_2023_24'.
+hustle_2023_24 = pd.read_csv('all_teams_hustle_df.csv')
+\end{verbatim}
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Drop the rows in the DataFrame 'hustle_2023_24' where the 'TEAM_NAME' is missing (NaN).
+# The 'subset' argument specifies that only NaN values in the 'TEAM_NAME' column should be considered.
+hustle_2023_24 = hustle_2023_24.dropna(subset=['TEAM_NAME'])
+
+# Display the DataFrame 'hustle_2023_24'.
+hustle_2023_24
+\end{verbatim}
+
+Out{[}~{]}:
+
+\begin{longtable}[]{@{}llllllllllllllllllllllllllll@{}}
+\toprule
+& GAME\_ID & HUSTLE\_STATUS & TEAM\_ID & TEAM\_ABBREVIATION & TEAM\_CITY
+& PLAYER\_ID & PLAYER\_NAME & START\_POSITION & COMMENT & MINUTES & PTS
+& CONTESTED\_SHOTS & CONTESTED\_SHOTS\_2PT & CONTESTED\_SHOTS\_3PT &
+DEFLECTIONS & CHARGES\_DRAWN & SCREEN\_ASSISTS & SCREEN\_AST\_PTS &
+OFF\_LOOSE\_BALLS\_RECOVERED & DEF\_LOOSE\_BALLS\_RECOVERED &
+LOOSE\_BALLS\_RECOVERED & OFF\_BOXOUTS & DEF\_BOXOUTS &
+BOX\_OUT\_PLAYER\_TEAM\_REBS & BOX\_OUT\_PLAYER\_REBS & BOX\_OUTS &
+TEAM\_NAME \\
+\midrule
+\endhead
+1 & 52300111 & NaN & 1.610613e+09 & ATL & Atlanta & NaN & NaN & NaN &
+NaN & 240.000000:00 & 116.0 & 28.0 & 16.0 & 12.0 & 14.0 & 2.0 & 10.0 &
+24.0 & 2.0 & 0.0 & 2.0 & 2.0 & 4.0 & 6.0 & 4.0 & 6.0 & Hawks \\
+2 & 52300111 & NaN & 1.610613e+09 & ATL & Chicago & NaN & NaN & NaN &
+NaN & 240.000000:00 & 131.0 & 38.0 & 29.0 & 9.0 & 13.0 & 0.0 & 11.0 &
+22.0 & 5.0 & 2.0 & 7.0 & 2.0 & 7.0 & 9.0 & 8.0 & 9.0 & Bulls \\
+4 & 22301188 & NaN & 1.610613e+09 & ATL & Atlanta & NaN & NaN & NaN &
+NaN & 240.000000:00 & 115.0 & 36.0 & 19.0 & 17.0 & 12.0 & 1.0 & 10.0 &
+22.0 & 2.0 & 0.0 & 2.0 & 0.0 & 7.0 & 6.0 & 0.0 & 7.0 & Hawks \\
+5 & 22301188 & NaN & 1.610613e+09 & ATL & Indiana & NaN & NaN & NaN &
+NaN & 240.000000:00 & 157.0 & 36.0 & 17.0 & 19.0 & 15.0 & 0.0 & 5.0 &
+13.0 & 2.0 & 2.0 & 4.0 & 2.0 & 7.0 & 9.0 & 3.0 & 9.0 & Pacers \\
+7 & 22301178 & NaN & 1.610613e+09 & ATL & Atlanta & NaN & NaN & NaN &
+NaN & 240.000000:00 & 106.0 & 24.0 & 13.0 & 11.0 & 7.0 & 2.0 & 7.0 &
+17.0 & 0.0 & 1.0 & 1.0 & 0.0 & 7.0 & 7.0 & 4.0 & 7.0 & Hawks \\
+... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... &
+... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... &
+... & ... & ... & ... \\
+4112 & 22300933 & NaN & 1.610613e+09 & DET & Detroit & NaN & NaN & NaN &
+NaN & 240.000000:00 & 114.0 & 44.0 & 25.0 & 19.0 & 18.0 & 0.0 & 7.0 &
+14.0 & 1.0 & 4.0 & 5.0 & 0.0 & 3.0 & 3.0 & 1.0 & 3.0 & Pistons \\
+4114 & 22300619 & NaN & 1.610613e+09 & DET & Charlotte & NaN & NaN & NaN
+& NaN & 240.000000:00 & 106.0 & 40.0 & 25.0 & 15.0 & 11.0 & 0.0 & 10.0 &
+22.0 & 2.0 & 2.0 & 4.0 & 2.0 & 5.0 & 7.0 & 4.0 & 7.0 & Hornets \\
+4115 & 22300619 & NaN & 1.610613e+09 & DET & Detroit & NaN & NaN & NaN &
+NaN & 240.000000:00 & 113.0 & 41.0 & 25.0 & 16.0 & 12.0 & 0.0 & 7.0 &
+18.0 & 2.0 & 2.0 & 4.0 & 1.0 & 13.0 & 14.0 & 6.0 & 14.0 & Pistons \\
+4117 & 22300077 & NaN & 1.610613e+09 & DET & Detroit & NaN & NaN & NaN &
+NaN & 240.000000:00 & 111.0 & 45.0 & 31.0 & 14.0 & 7.0 & 0.0 & 6.0 &
+14.0 & 2.0 & 2.0 & 4.0 & 1.0 & 5.0 & 5.0 & 2.0 & 6.0 & Pistons \\
+4118 & 22300077 & NaN & 1.610613e+09 & DET & Charlotte & NaN & NaN & NaN
+& NaN & 240.000000:00 & 99.0 & 35.0 & 25.0 & 10.0 & 17.0 & 0.0 & 7.0 &
+17.0 & 3.0 & 4.0 & 7.0 & 2.0 & 4.0 & 5.0 & 1.0 & 6.0 & Hornets \\
+\bottomrule
+\end{longtable}
+
+2746 rows × 27 columns
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Drop the duplicate rows in the DataFrame 'hustle_2023_24' where the 'GAME_ID' and 'TEAM_NAME' are the same.
+# The 'subset' argument specifies that only duplicates in the 'GAME_ID' and 'TEAM_NAME' columns should be considered.
+hustle_2023_24 = hustle_2023_24.drop_duplicates(subset=['GAME_ID', 'TEAM_NAME'])
+
+# Display the DataFrame 'hustle_2023_24'.
+hustle_2023_24
+\end{verbatim}
+
+Out{[}~{]}:
+
+\begin{longtable}[]{@{}llllllllllllllllllllllllllll@{}}
+\toprule
+& GAME\_ID & HUSTLE\_STATUS & TEAM\_ID & TEAM\_ABBREVIATION & TEAM\_CITY
+& PLAYER\_ID & PLAYER\_NAME & START\_POSITION & COMMENT & MINUTES & PTS
+& CONTESTED\_SHOTS & CONTESTED\_SHOTS\_2PT & CONTESTED\_SHOTS\_3PT &
+DEFLECTIONS & CHARGES\_DRAWN & SCREEN\_ASSISTS & SCREEN\_AST\_PTS &
+OFF\_LOOSE\_BALLS\_RECOVERED & DEF\_LOOSE\_BALLS\_RECOVERED &
+LOOSE\_BALLS\_RECOVERED & OFF\_BOXOUTS & DEF\_BOXOUTS &
+BOX\_OUT\_PLAYER\_TEAM\_REBS & BOX\_OUT\_PLAYER\_REBS & BOX\_OUTS &
+TEAM\_NAME \\
+\midrule
+\endhead
+1 & 52300111 & NaN & 1.610613e+09 & ATL & Atlanta & NaN & NaN & NaN &
+NaN & 240.000000:00 & 116.0 & 28.0 & 16.0 & 12.0 & 14.0 & 2.0 & 10.0 &
+24.0 & 2.0 & 0.0 & 2.0 & 2.0 & 4.0 & 6.0 & 4.0 & 6.0 & Hawks \\
+2 & 52300111 & NaN & 1.610613e+09 & ATL & Chicago & NaN & NaN & NaN &
+NaN & 240.000000:00 & 131.0 & 38.0 & 29.0 & 9.0 & 13.0 & 0.0 & 11.0 &
+22.0 & 5.0 & 2.0 & 7.0 & 2.0 & 7.0 & 9.0 & 8.0 & 9.0 & Bulls \\
+4 & 22301188 & NaN & 1.610613e+09 & ATL & Atlanta & NaN & NaN & NaN &
+NaN & 240.000000:00 & 115.0 & 36.0 & 19.0 & 17.0 & 12.0 & 1.0 & 10.0 &
+22.0 & 2.0 & 0.0 & 2.0 & 0.0 & 7.0 & 6.0 & 0.0 & 7.0 & Hawks \\
+5 & 22301188 & NaN & 1.610613e+09 & ATL & Indiana & NaN & NaN & NaN &
+NaN & 240.000000:00 & 157.0 & 36.0 & 17.0 & 19.0 & 15.0 & 0.0 & 5.0 &
+13.0 & 2.0 & 2.0 & 4.0 & 2.0 & 7.0 & 9.0 & 3.0 & 9.0 & Pacers \\
+7 & 22301178 & NaN & 1.610613e+09 & ATL & Atlanta & NaN & NaN & NaN &
+NaN & 240.000000:00 & 106.0 & 24.0 & 13.0 & 11.0 & 7.0 & 2.0 & 7.0 &
+17.0 & 0.0 & 1.0 & 1.0 & 0.0 & 7.0 & 7.0 & 4.0 & 7.0 & Hawks \\
+... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... &
+... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... &
+... & ... & ... & ... \\
+4112 & 22300933 & NaN & 1.610613e+09 & DET & Detroit & NaN & NaN & NaN &
+NaN & 240.000000:00 & 114.0 & 44.0 & 25.0 & 19.0 & 18.0 & 0.0 & 7.0 &
+14.0 & 1.0 & 4.0 & 5.0 & 0.0 & 3.0 & 3.0 & 1.0 & 3.0 & Pistons \\
+4114 & 22300619 & NaN & 1.610613e+09 & DET & Charlotte & NaN & NaN & NaN
+& NaN & 240.000000:00 & 106.0 & 40.0 & 25.0 & 15.0 & 11.0 & 0.0 & 10.0 &
+22.0 & 2.0 & 2.0 & 4.0 & 2.0 & 5.0 & 7.0 & 4.0 & 7.0 & Hornets \\
+4115 & 22300619 & NaN & 1.610613e+09 & DET & Detroit & NaN & NaN & NaN &
+NaN & 240.000000:00 & 113.0 & 41.0 & 25.0 & 16.0 & 12.0 & 0.0 & 7.0 &
+18.0 & 2.0 & 2.0 & 4.0 & 1.0 & 13.0 & 14.0 & 6.0 & 14.0 & Pistons \\
+4117 & 22300077 & NaN & 1.610613e+09 & DET & Detroit & NaN & NaN & NaN &
+NaN & 240.000000:00 & 111.0 & 45.0 & 31.0 & 14.0 & 7.0 & 0.0 & 6.0 &
+14.0 & 2.0 & 2.0 & 4.0 & 1.0 & 5.0 & 5.0 & 2.0 & 6.0 & Pistons \\
+4118 & 22300077 & NaN & 1.610613e+09 & DET & Charlotte & NaN & NaN & NaN
+& NaN & 240.000000:00 & 99.0 & 35.0 & 25.0 & 10.0 & 17.0 & 0.0 & 7.0 &
+17.0 & 3.0 & 4.0 & 7.0 & 2.0 & 4.0 & 5.0 & 1.0 & 6.0 & Hornets \\
+\bottomrule
+\end{longtable}
+
+2746 rows × 27 columns
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# First, sort the DataFrame by 'GAME_ID' and 'PTS'
+hustle_2023_24 = hustle_2023_24.sort_values(by=['GAME_ID', 'PTS'])
+
+# Then, group by 'GAME_ID' and assign 0 to the team with fewer points and 1 to the team with more points
+hustle_2023_24['W/L'] = hustle_2023_24.groupby('GAME_ID').cumcount()
+
+# Reverse the 'W/L' values (so that 1 represents a win and 0 represents a loss)
+hustle_2023_24['W/L'] = hustle_2023_24['W/L'].map({0: 1, 1: 0})
+
+hustle_2023_24
+\end{verbatim}
+
+Out{[}~{]}:
+
+\begin{longtable}[]{@{}lllllllllllllllllllllllllllll@{}}
+\toprule
+& GAME\_ID & HUSTLE\_STATUS & TEAM\_ID & TEAM\_ABBREVIATION & TEAM\_CITY
+& PLAYER\_ID & PLAYER\_NAME & START\_POSITION & COMMENT & MINUTES & PTS
+& CONTESTED\_SHOTS & CONTESTED\_SHOTS\_2PT & CONTESTED\_SHOTS\_3PT &
+DEFLECTIONS & CHARGES\_DRAWN & SCREEN\_ASSISTS & SCREEN\_AST\_PTS &
+OFF\_LOOSE\_BALLS\_RECOVERED & DEF\_LOOSE\_BALLS\_RECOVERED &
+LOOSE\_BALLS\_RECOVERED & OFF\_BOXOUTS & DEF\_BOXOUTS &
+BOX\_OUT\_PLAYER\_TEAM\_REBS & BOX\_OUT\_PLAYER\_REBS & BOX\_OUTS &
+TEAM\_NAME & W/L \\
+\midrule
+\endhead
+1534 & 12300001 & NaN & 1.610613e+09 & DAL & Dallas & NaN & NaN & NaN &
+NaN & 240.000000:00 & 99.0 & 43.0 & 32.0 & 11.0 & 24.0 & 0.0 & 9.0 &
+21.0 & 1.0 & 5.0 & 6.0 & 1.0 & 4.0 & 5.0 & 4.0 & 5.0 & Mavericks & 1 \\
+1535 & 12300001 & NaN & 1.610613e+09 & DAL & Minnesota & NaN & NaN & NaN
+& NaN & 240.000000:00 & 111.0 & 56.0 & 28.0 & 28.0 & 14.0 & 0.0 & 3.0 &
+6.0 & 2.0 & 2.0 & 4.0 & 2.0 & 9.0 & 11.0 & 5.0 & 11.0 & Timberwolves &
+0 \\
+1532 & 12300002 & NaN & 1.610613e+09 & DAL & Dallas & NaN & NaN & NaN &
+NaN & 240.000000:00 & 96.0 & 45.0 & 31.0 & 14.0 & 11.0 & 1.0 & 7.0 &
+17.0 & 3.0 & 5.0 & 8.0 & 0.0 & 3.0 & 3.0 & 2.0 & 3.0 & Mavericks & 1 \\
+1531 & 12300002 & NaN & 1.610613e+09 & DAL & Minnesota & NaN & NaN & NaN
+& NaN & 240.000000:00 & 104.0 & 54.0 & 29.0 & 25.0 & 28.0 & 2.0 & 4.0 &
+11.0 & 0.0 & 3.0 & 3.0 & 2.0 & 8.0 & 8.0 & 6.0 & 10.0 & Timberwolves &
+0 \\
+1984 & 12300003 & NaN & 1.610613e+09 & GSW & Los Angeles & NaN & NaN &
+NaN & NaN & 240.000000:00 & 108.0 & 43.0 & 23.0 & 20.0 & 14.0 & 1.0 &
+4.0 & 8.0 & 1.0 & 4.0 & 5.0 & 1.0 & 2.0 & 3.0 & 2.0 & 3.0 & Lakers &
+1 \\
+... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... &
+... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... &
+... & ... & ... & ... & ... \\
+1055 & 52300201 & NaN & 1.610613e+09 & CHI & Miami & NaN & NaN & NaN &
+NaN & 240.000000:00 & 112.0 & 39.0 & 25.0 & 14.0 & 16.0 & 0.0 & 3.0 &
+9.0 & 4.0 & 2.0 & 6.0 & 1.0 & 8.0 & 8.0 & 5.0 & 9.0 & Heat & 0 \\
+811 & 52300211 & NaN & 1.610613e+09 & NOP & Sacramento & NaN & NaN & NaN
+& NaN & 240.000000:00 & 98.0 & 40.0 & 30.0 & 10.0 & 15.0 & 1.0 & 5.0 &
+10.0 & 3.0 & 4.0 & 7.0 & 0.0 & 4.0 & 4.0 & 1.0 & 4.0 & Kings & 1 \\
+812 & 52300211 & NaN & 1.610613e+09 & NOP & New Orleans & NaN & NaN &
+NaN & NaN & 240.000000:00 & 105.0 & 45.0 & 24.0 & 21.0 & 13.0 & 0.0 &
+8.0 & 16.0 & 3.0 & 6.0 & 9.0 & 2.0 & 12.0 & 10.0 & 3.0 & 14.0 & Pelicans
+& 0 \\
+2461 & 62300001 & NaN & 1.610613e+09 & LAL & Indiana & NaN & NaN & NaN &
+NaN & 240.000000:00 & 109.0 & 37.0 & 32.0 & 5.0 & 11.0 & 0.0 & 10.0 &
+23.0 & 1.0 & 2.0 & 3.0 & 1.0 & 2.0 & 3.0 & 1.0 & 3.0 & Pacers & 1 \\
+2462 & 62300001 & NaN & 1.610613e+09 & LAL & Los Angeles & NaN & NaN &
+NaN & NaN & 240.000000:00 & 123.0 & 57.0 & 36.0 & 21.0 & 9.0 & 0.0 &
+14.0 & 28.0 & 2.0 & 4.0 & 6.0 & 4.0 & 9.0 & 13.0 & 7.0 & 13.0 & Lakers &
+0 \\
+\bottomrule
+\end{longtable}
+
+2746 rows × 28 columns
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Define a list of column names that we want to calculate differences for
+columns_to_diff = ['CONTESTED_SHOTS', 'CONTESTED_SHOTS_2PT', 'CONTESTED_SHOTS_3PT',
+                   'DEFLECTIONS', 'CHARGES_DRAWN', 'SCREEN_ASSISTS', 'SCREEN_AST_PTS',
+                   'OFF_LOOSE_BALLS_RECOVERED', 'DEF_LOOSE_BALLS_RECOVERED',
+                   'LOOSE_BALLS_RECOVERED', 'OFF_BOXOUTS', 'DEF_BOXOUTS',
+                   'BOX_OUT_PLAYER_TEAM_REBS', 'BOX_OUT_PLAYER_REBS', 'BOX_OUTS']
+
+# For each column in the list
+for column in columns_to_diff:
+    # Create a new column name by appending '_DIFF' to the original column name
+    diff_column = column + '_DIFF'
+    
+    # Calculate the difference between each row and the previous row within each 'GAME_ID' group
+    # and store the results in the new column
+    hustle_2023_24[diff_column] = hustle_2023_24.groupby('GAME_ID')[column].diff()
+    
+    # Fill any missing values in the new column with the negative of the next row's value
+    hustle_2023_24[diff_column] = hustle_2023_24[diff_column].fillna(-hustle_2023_24[diff_column].shift(-1))
+
+# Display the DataFrame 'hustle_2023_24'
+hustle_2023_24
+\end{verbatim}
+
+Out{[}~{]}:
+
+\begin{longtable}[]{@{}llllllllllllllllllllllllllllllllllllllllllll@{}}
+\toprule
+& GAME\_ID & HUSTLE\_STATUS & TEAM\_ID & TEAM\_ABBREVIATION & TEAM\_CITY
+& PLAYER\_ID & PLAYER\_NAME & START\_POSITION & COMMENT & MINUTES & PTS
+& CONTESTED\_SHOTS & CONTESTED\_SHOTS\_2PT & CONTESTED\_SHOTS\_3PT &
+DEFLECTIONS & CHARGES\_DRAWN & SCREEN\_ASSISTS & SCREEN\_AST\_PTS &
+OFF\_LOOSE\_BALLS\_RECOVERED & DEF\_LOOSE\_BALLS\_RECOVERED &
+LOOSE\_BALLS\_RECOVERED & OFF\_BOXOUTS & DEF\_BOXOUTS &
+BOX\_OUT\_PLAYER\_TEAM\_REBS & BOX\_OUT\_PLAYER\_REBS & BOX\_OUTS &
+TEAM\_NAME & W/L & CONTESTED\_SHOTS\_DIFF & CONTESTED\_SHOTS\_2PT\_DIFF
+& CONTESTED\_SHOTS\_3PT\_DIFF & DEFLECTIONS\_DIFF & CHARGES\_DRAWN\_DIFF
+& SCREEN\_ASSISTS\_DIFF & SCREEN\_AST\_PTS\_DIFF &
+OFF\_LOOSE\_BALLS\_RECOVERED\_DIFF & DEF\_LOOSE\_BALLS\_RECOVERED\_DIFF
+& LOOSE\_BALLS\_RECOVERED\_DIFF & OFF\_BOXOUTS\_DIFF &
+DEF\_BOXOUTS\_DIFF & BOX\_OUT\_PLAYER\_TEAM\_REBS\_DIFF &
+BOX\_OUT\_PLAYER\_REBS\_DIFF & BOX\_OUTS\_DIFF \\
+\midrule
+\endhead
+1534 & 12300001 & NaN & 1.610613e+09 & DAL & Dallas & NaN & NaN & NaN &
+NaN & 240.000000:00 & 99.0 & 43.0 & 32.0 & 11.0 & 24.0 & 0.0 & 9.0 &
+21.0 & 1.0 & 5.0 & 6.0 & 1.0 & 4.0 & 5.0 & 4.0 & 5.0 & Mavericks & 1 &
+-13.0 & 4.0 & -17.0 & 10.0 & -0.0 & 6.0 & 15.0 & -1.0 & 3.0 & 2.0 & -1.0
+& -5.0 & -6.0 & -1.0 & -6.0 \\
+1535 & 12300001 & NaN & 1.610613e+09 & DAL & Minnesota & NaN & NaN & NaN
+& NaN & 240.000000:00 & 111.0 & 56.0 & 28.0 & 28.0 & 14.0 & 0.0 & 3.0 &
+6.0 & 2.0 & 2.0 & 4.0 & 2.0 & 9.0 & 11.0 & 5.0 & 11.0 & Timberwolves & 0
+& 13.0 & -4.0 & 17.0 & -10.0 & 0.0 & -6.0 & -15.0 & 1.0 & -3.0 & -2.0 &
+1.0 & 5.0 & 6.0 & 1.0 & 6.0 \\
+1532 & 12300002 & NaN & 1.610613e+09 & DAL & Dallas & NaN & NaN & NaN &
+NaN & 240.000000:00 & 96.0 & 45.0 & 31.0 & 14.0 & 11.0 & 1.0 & 7.0 &
+17.0 & 3.0 & 5.0 & 8.0 & 0.0 & 3.0 & 3.0 & 2.0 & 3.0 & Mavericks & 1 &
+-9.0 & 2.0 & -11.0 & -17.0 & -1.0 & 3.0 & 6.0 & 3.0 & 2.0 & 5.0 & -2.0 &
+-5.0 & -5.0 & -4.0 & -7.0 \\
+1531 & 12300002 & NaN & 1.610613e+09 & DAL & Minnesota & NaN & NaN & NaN
+& NaN & 240.000000:00 & 104.0 & 54.0 & 29.0 & 25.0 & 28.0 & 2.0 & 4.0 &
+11.0 & 0.0 & 3.0 & 3.0 & 2.0 & 8.0 & 8.0 & 6.0 & 10.0 & Timberwolves & 0
+& 9.0 & -2.0 & 11.0 & 17.0 & 1.0 & -3.0 & -6.0 & -3.0 & -2.0 & -5.0 &
+2.0 & 5.0 & 5.0 & 4.0 & 7.0 \\
+1984 & 12300003 & NaN & 1.610613e+09 & GSW & Los Angeles & NaN & NaN &
+NaN & NaN & 240.000000:00 & 108.0 & 43.0 & 23.0 & 20.0 & 14.0 & 1.0 &
+4.0 & 8.0 & 1.0 & 4.0 & 5.0 & 1.0 & 2.0 & 3.0 & 2.0 & 3.0 & Lakers & 1 &
+-10.0 & -14.0 & 4.0 & -9.0 & -1.0 & -6.0 & -13.0 & -1.0 & 4.0 & 3.0 &
+-1.0 & 2.0 & 2.0 & 1.0 & 1.0 \\
+... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... &
+... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... &
+... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... &
+... & ... & ... & ... & ... & ... & ... & ... \\
+1055 & 52300201 & NaN & 1.610613e+09 & CHI & Miami & NaN & NaN & NaN &
+NaN & 240.000000:00 & 112.0 & 39.0 & 25.0 & 14.0 & 16.0 & 0.0 & 3.0 &
+9.0 & 4.0 & 2.0 & 6.0 & 1.0 & 8.0 & 8.0 & 5.0 & 9.0 & Heat & 0 & 0.0 &
+5.0 & -5.0 & -6.0 & 0.0 & 0.0 & 3.0 & -4.0 & -6.0 & -10.0 & 0.0 & 2.0 &
+1.0 & 4.0 & 2.0 \\
+811 & 52300211 & NaN & 1.610613e+09 & NOP & Sacramento & NaN & NaN & NaN
+& NaN & 240.000000:00 & 98.0 & 40.0 & 30.0 & 10.0 & 15.0 & 1.0 & 5.0 &
+10.0 & 3.0 & 4.0 & 7.0 & 0.0 & 4.0 & 4.0 & 1.0 & 4.0 & Kings & 1 & -5.0
+& 6.0 & -11.0 & 2.0 & 1.0 & -3.0 & -6.0 & -0.0 & -2.0 & -2.0 & -2.0 &
+-8.0 & -6.0 & -2.0 & -10.0 \\
+812 & 52300211 & NaN & 1.610613e+09 & NOP & New Orleans & NaN & NaN &
+NaN & NaN & 240.000000:00 & 105.0 & 45.0 & 24.0 & 21.0 & 13.0 & 0.0 &
+8.0 & 16.0 & 3.0 & 6.0 & 9.0 & 2.0 & 12.0 & 10.0 & 3.0 & 14.0 & Pelicans
+& 0 & 5.0 & -6.0 & 11.0 & -2.0 & -1.0 & 3.0 & 6.0 & 0.0 & 2.0 & 2.0 &
+2.0 & 8.0 & 6.0 & 2.0 & 10.0 \\
+2461 & 62300001 & NaN & 1.610613e+09 & LAL & Indiana & NaN & NaN & NaN &
+NaN & 240.000000:00 & 109.0 & 37.0 & 32.0 & 5.0 & 11.0 & 0.0 & 10.0 &
+23.0 & 1.0 & 2.0 & 3.0 & 1.0 & 2.0 & 3.0 & 1.0 & 3.0 & Pacers & 1 &
+-20.0 & -4.0 & -16.0 & 2.0 & -0.0 & -4.0 & -5.0 & -1.0 & -2.0 & -3.0 &
+-3.0 & -7.0 & -10.0 & -6.0 & -10.0 \\
+2462 & 62300001 & NaN & 1.610613e+09 & LAL & Los Angeles & NaN & NaN &
+NaN & NaN & 240.000000:00 & 123.0 & 57.0 & 36.0 & 21.0 & 9.0 & 0.0 &
+14.0 & 28.0 & 2.0 & 4.0 & 6.0 & 4.0 & 9.0 & 13.0 & 7.0 & 13.0 & Lakers &
+0 & 20.0 & 4.0 & 16.0 & -2.0 & 0.0 & 4.0 & 5.0 & 1.0 & 2.0 & 3.0 & 3.0 &
+7.0 & 10.0 & 6.0 & 10.0 \\
+\bottomrule
+\end{longtable}
+
+2746 rows × 43 columns
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Drop the non-numeric columns from the DataFrame 'hustle_2023_24'.
+# The 'columns' argument specifies the names of the columns to be dropped.
+hustle_2023_24 = hustle_2023_24.drop(columns=['GAME_ID', 'HUSTLE_STATUS', 'TEAM_ID', 'TEAM_ABBREVIATION', 'PLAYER_ID', 'PLAYER_NAME', 'START_POSITION', 'COMMENT', 'MINUTES', 'PTS', 'TEAM_NAME'])
+
+# Display the DataFrame 'hustle_2023_24'.
+hustle_2023_24
+\end{verbatim}
+
+Out{[}~{]}:
+
+\begin{longtable}[]{@{}lllllllllllllllllllllllllllllllll@{}}
+\toprule
+& TEAM\_CITY & CONTESTED\_SHOTS & CONTESTED\_SHOTS\_2PT &
+CONTESTED\_SHOTS\_3PT & DEFLECTIONS & CHARGES\_DRAWN & SCREEN\_ASSISTS &
+SCREEN\_AST\_PTS & OFF\_LOOSE\_BALLS\_RECOVERED &
+DEF\_LOOSE\_BALLS\_RECOVERED & LOOSE\_BALLS\_RECOVERED & OFF\_BOXOUTS &
+DEF\_BOXOUTS & BOX\_OUT\_PLAYER\_TEAM\_REBS & BOX\_OUT\_PLAYER\_REBS &
+BOX\_OUTS & W/L & CONTESTED\_SHOTS\_DIFF & CONTESTED\_SHOTS\_2PT\_DIFF &
+CONTESTED\_SHOTS\_3PT\_DIFF & DEFLECTIONS\_DIFF & CHARGES\_DRAWN\_DIFF &
+SCREEN\_ASSISTS\_DIFF & SCREEN\_AST\_PTS\_DIFF &
+OFF\_LOOSE\_BALLS\_RECOVERED\_DIFF & DEF\_LOOSE\_BALLS\_RECOVERED\_DIFF
+& LOOSE\_BALLS\_RECOVERED\_DIFF & OFF\_BOXOUTS\_DIFF &
+DEF\_BOXOUTS\_DIFF & BOX\_OUT\_PLAYER\_TEAM\_REBS\_DIFF &
+BOX\_OUT\_PLAYER\_REBS\_DIFF & BOX\_OUTS\_DIFF \\
+\midrule
+\endhead
+1534 & Dallas & 43.0 & 32.0 & 11.0 & 24.0 & 0.0 & 9.0 & 21.0 & 1.0 & 5.0
+& 6.0 & 1.0 & 4.0 & 5.0 & 4.0 & 5.0 & 1 & -13.0 & 4.0 & -17.0 & 10.0 &
+-0.0 & 6.0 & 15.0 & -1.0 & 3.0 & 2.0 & -1.0 & -5.0 & -6.0 & -1.0 &
+-6.0 \\
+1535 & Minnesota & 56.0 & 28.0 & 28.0 & 14.0 & 0.0 & 3.0 & 6.0 & 2.0 &
+2.0 & 4.0 & 2.0 & 9.0 & 11.0 & 5.0 & 11.0 & 0 & 13.0 & -4.0 & 17.0 &
+-10.0 & 0.0 & -6.0 & -15.0 & 1.0 & -3.0 & -2.0 & 1.0 & 5.0 & 6.0 & 1.0 &
+6.0 \\
+1532 & Dallas & 45.0 & 31.0 & 14.0 & 11.0 & 1.0 & 7.0 & 17.0 & 3.0 & 5.0
+& 8.0 & 0.0 & 3.0 & 3.0 & 2.0 & 3.0 & 1 & -9.0 & 2.0 & -11.0 & -17.0 &
+-1.0 & 3.0 & 6.0 & 3.0 & 2.0 & 5.0 & -2.0 & -5.0 & -5.0 & -4.0 & -7.0 \\
+1531 & Minnesota & 54.0 & 29.0 & 25.0 & 28.0 & 2.0 & 4.0 & 11.0 & 0.0 &
+3.0 & 3.0 & 2.0 & 8.0 & 8.0 & 6.0 & 10.0 & 0 & 9.0 & -2.0 & 11.0 & 17.0
+& 1.0 & -3.0 & -6.0 & -3.0 & -2.0 & -5.0 & 2.0 & 5.0 & 5.0 & 4.0 &
+7.0 \\
+1984 & Los Angeles & 43.0 & 23.0 & 20.0 & 14.0 & 1.0 & 4.0 & 8.0 & 1.0 &
+4.0 & 5.0 & 1.0 & 2.0 & 3.0 & 2.0 & 3.0 & 1 & -10.0 & -14.0 & 4.0 & -9.0
+& -1.0 & -6.0 & -13.0 & -1.0 & 4.0 & 3.0 & -1.0 & 2.0 & 2.0 & 1.0 &
+1.0 \\
+... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... &
+... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... &
+... & ... & ... & ... & ... & ... & ... & ... & ... \\
+1055 & Miami & 39.0 & 25.0 & 14.0 & 16.0 & 0.0 & 3.0 & 9.0 & 4.0 & 2.0 &
+6.0 & 1.0 & 8.0 & 8.0 & 5.0 & 9.0 & 0 & 0.0 & 5.0 & -5.0 & -6.0 & 0.0 &
+0.0 & 3.0 & -4.0 & -6.0 & -10.0 & 0.0 & 2.0 & 1.0 & 4.0 & 2.0 \\
+811 & Sacramento & 40.0 & 30.0 & 10.0 & 15.0 & 1.0 & 5.0 & 10.0 & 3.0 &
+4.0 & 7.0 & 0.0 & 4.0 & 4.0 & 1.0 & 4.0 & 1 & -5.0 & 6.0 & -11.0 & 2.0 &
+1.0 & -3.0 & -6.0 & -0.0 & -2.0 & -2.0 & -2.0 & -8.0 & -6.0 & -2.0 &
+-10.0 \\
+812 & New Orleans & 45.0 & 24.0 & 21.0 & 13.0 & 0.0 & 8.0 & 16.0 & 3.0 &
+6.0 & 9.0 & 2.0 & 12.0 & 10.0 & 3.0 & 14.0 & 0 & 5.0 & -6.0 & 11.0 &
+-2.0 & -1.0 & 3.0 & 6.0 & 0.0 & 2.0 & 2.0 & 2.0 & 8.0 & 6.0 & 2.0 &
+10.0 \\
+2461 & Indiana & 37.0 & 32.0 & 5.0 & 11.0 & 0.0 & 10.0 & 23.0 & 1.0 &
+2.0 & 3.0 & 1.0 & 2.0 & 3.0 & 1.0 & 3.0 & 1 & -20.0 & -4.0 & -16.0 & 2.0
+& -0.0 & -4.0 & -5.0 & -1.0 & -2.0 & -3.0 & -3.0 & -7.0 & -10.0 & -6.0 &
+-10.0 \\
+2462 & Los Angeles & 57.0 & 36.0 & 21.0 & 9.0 & 0.0 & 14.0 & 28.0 & 2.0
+& 4.0 & 6.0 & 4.0 & 9.0 & 13.0 & 7.0 & 13.0 & 0 & 20.0 & 4.0 & 16.0 &
+-2.0 & 0.0 & 4.0 & 5.0 & 1.0 & 2.0 & 3.0 & 3.0 & 7.0 & 10.0 & 6.0 &
+10.0 \\
+\bottomrule
+\end{longtable}
+
+2746 rows × 32 columns
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Drop the 'TEAM_CITY' column from the DataFrame 'hustle_2023_24'.
+# The 'columns' argument specifies the name of the column to be dropped.
+hustle_2023_24 = hustle_2023_24.drop(columns=['TEAM_CITY'])
+
+# Display the DataFrame 'hustle_2023_24'.
+hustle_2023_24
+\end{verbatim}
+
+Out{[}~{]}:
+
+\begin{longtable}[]{@{}llllllllllllllllllllllllllllllll@{}}
+\toprule
+& CONTESTED\_SHOTS & CONTESTED\_SHOTS\_2PT & CONTESTED\_SHOTS\_3PT &
+DEFLECTIONS & CHARGES\_DRAWN & SCREEN\_ASSISTS & SCREEN\_AST\_PTS &
+OFF\_LOOSE\_BALLS\_RECOVERED & DEF\_LOOSE\_BALLS\_RECOVERED &
+LOOSE\_BALLS\_RECOVERED & OFF\_BOXOUTS & DEF\_BOXOUTS &
+BOX\_OUT\_PLAYER\_TEAM\_REBS & BOX\_OUT\_PLAYER\_REBS & BOX\_OUTS & W/L
+& CONTESTED\_SHOTS\_DIFF & CONTESTED\_SHOTS\_2PT\_DIFF &
+CONTESTED\_SHOTS\_3PT\_DIFF & DEFLECTIONS\_DIFF & CHARGES\_DRAWN\_DIFF &
+SCREEN\_ASSISTS\_DIFF & SCREEN\_AST\_PTS\_DIFF &
+OFF\_LOOSE\_BALLS\_RECOVERED\_DIFF & DEF\_LOOSE\_BALLS\_RECOVERED\_DIFF
+& LOOSE\_BALLS\_RECOVERED\_DIFF & OFF\_BOXOUTS\_DIFF &
+DEF\_BOXOUTS\_DIFF & BOX\_OUT\_PLAYER\_TEAM\_REBS\_DIFF &
+BOX\_OUT\_PLAYER\_REBS\_DIFF & BOX\_OUTS\_DIFF \\
+\midrule
+\endhead
+1534 & 43.0 & 32.0 & 11.0 & 24.0 & 0.0 & 9.0 & 21.0 & 1.0 & 5.0 & 6.0 &
+1.0 & 4.0 & 5.0 & 4.0 & 5.0 & 1 & -13.0 & 4.0 & -17.0 & 10.0 & -0.0 &
+6.0 & 15.0 & -1.0 & 3.0 & 2.0 & -1.0 & -5.0 & -6.0 & -1.0 & -6.0 \\
+1535 & 56.0 & 28.0 & 28.0 & 14.0 & 0.0 & 3.0 & 6.0 & 2.0 & 2.0 & 4.0 &
+2.0 & 9.0 & 11.0 & 5.0 & 11.0 & 0 & 13.0 & -4.0 & 17.0 & -10.0 & 0.0 &
+-6.0 & -15.0 & 1.0 & -3.0 & -2.0 & 1.0 & 5.0 & 6.0 & 1.0 & 6.0 \\
+1532 & 45.0 & 31.0 & 14.0 & 11.0 & 1.0 & 7.0 & 17.0 & 3.0 & 5.0 & 8.0 &
+0.0 & 3.0 & 3.0 & 2.0 & 3.0 & 1 & -9.0 & 2.0 & -11.0 & -17.0 & -1.0 &
+3.0 & 6.0 & 3.0 & 2.0 & 5.0 & -2.0 & -5.0 & -5.0 & -4.0 & -7.0 \\
+1531 & 54.0 & 29.0 & 25.0 & 28.0 & 2.0 & 4.0 & 11.0 & 0.0 & 3.0 & 3.0 &
+2.0 & 8.0 & 8.0 & 6.0 & 10.0 & 0 & 9.0 & -2.0 & 11.0 & 17.0 & 1.0 & -3.0
+& -6.0 & -3.0 & -2.0 & -5.0 & 2.0 & 5.0 & 5.0 & 4.0 & 7.0 \\
+1984 & 43.0 & 23.0 & 20.0 & 14.0 & 1.0 & 4.0 & 8.0 & 1.0 & 4.0 & 5.0 &
+1.0 & 2.0 & 3.0 & 2.0 & 3.0 & 1 & -10.0 & -14.0 & 4.0 & -9.0 & -1.0 &
+-6.0 & -13.0 & -1.0 & 4.0 & 3.0 & -1.0 & 2.0 & 2.0 & 1.0 & 1.0 \\
+... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... &
+... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... & ... &
+... & ... & ... & ... & ... & ... & ... & ... \\
+1055 & 39.0 & 25.0 & 14.0 & 16.0 & 0.0 & 3.0 & 9.0 & 4.0 & 2.0 & 6.0 &
+1.0 & 8.0 & 8.0 & 5.0 & 9.0 & 0 & 0.0 & 5.0 & -5.0 & -6.0 & 0.0 & 0.0 &
+3.0 & -4.0 & -6.0 & -10.0 & 0.0 & 2.0 & 1.0 & 4.0 & 2.0 \\
+811 & 40.0 & 30.0 & 10.0 & 15.0 & 1.0 & 5.0 & 10.0 & 3.0 & 4.0 & 7.0 &
+0.0 & 4.0 & 4.0 & 1.0 & 4.0 & 1 & -5.0 & 6.0 & -11.0 & 2.0 & 1.0 & -3.0
+& -6.0 & -0.0 & -2.0 & -2.0 & -2.0 & -8.0 & -6.0 & -2.0 & -10.0 \\
+812 & 45.0 & 24.0 & 21.0 & 13.0 & 0.0 & 8.0 & 16.0 & 3.0 & 6.0 & 9.0 &
+2.0 & 12.0 & 10.0 & 3.0 & 14.0 & 0 & 5.0 & -6.0 & 11.0 & -2.0 & -1.0 &
+3.0 & 6.0 & 0.0 & 2.0 & 2.0 & 2.0 & 8.0 & 6.0 & 2.0 & 10.0 \\
+2461 & 37.0 & 32.0 & 5.0 & 11.0 & 0.0 & 10.0 & 23.0 & 1.0 & 2.0 & 3.0 &
+1.0 & 2.0 & 3.0 & 1.0 & 3.0 & 1 & -20.0 & -4.0 & -16.0 & 2.0 & -0.0 &
+-4.0 & -5.0 & -1.0 & -2.0 & -3.0 & -3.0 & -7.0 & -10.0 & -6.0 & -10.0 \\
+2462 & 57.0 & 36.0 & 21.0 & 9.0 & 0.0 & 14.0 & 28.0 & 2.0 & 4.0 & 6.0 &
+4.0 & 9.0 & 13.0 & 7.0 & 13.0 & 0 & 20.0 & 4.0 & 16.0 & -2.0 & 0.0 & 4.0
+& 5.0 & 1.0 & 2.0 & 3.0 & 3.0 & 7.0 & 10.0 & 6.0 & 10.0 \\
+\bottomrule
+\end{longtable}
+
+2746 rows × 31 columns
+
+In~{[}~{]}:
+
+\begin{verbatim}
+# Import necessary libraries
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.stats import linregress
+
+# Perform a linear regression for each stat with 'W/L' as the independent variable
+# Store the results in a dictionary where the keys are the stat names and the values are the regression results
+linreg_results = {column: linregress(hustle_2023_24['W/L'], hustle_2023_24[column]) for column in hustle_2023_24.columns if column != 'W/L'}
+
+# Convert the dictionary of regression results into a DataFrame
+# Transpose the DataFrame so that the stat names are the index and the regression results are the columns
+linreg_df = pd.DataFrame(linreg_results).T
+# Rename the columns of the DataFrame to reflect the regression results
+linreg_df.columns = ['Slope', 'Intercept', 'R-value', 'P-value', 'Std Error']
+
+# Create a new figure for the bar plot
+plt.figure(figsize=(10, 8))
+# Create a horizontal bar plot of the slopes for each stat
+bars = plt.barh(linreg_df.index, linreg_df['Slope'])
+
+# For each bar in the plot
+for bar in bars:
+    # Get the width of the bar (which is the slope value)
+    width = bar.get_width()
+    # Add a text label to the bar with the slope value
+    # The label is positioned at the end of the bar and is centered vertically
+    # The label is aligned to the right if the slope is negative and to the left if the slope is positive
+    plt.text(width, bar.get_y() + bar.get_height()/2, f'{width:.2f}', 
+             va='center', ha='right' if width < 0 else 'left')
+
+# Add a label to the x-axis
+plt.xlabel('Slope')
+# Add a title to the plot
+plt.title('Slope of Linear Regression for Each Stat')
+# Display the plot
+plt.show()
+\end{verbatim}
